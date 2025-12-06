@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "general": {
+      "format": "[%(levelname)s]: (%(asctime)s) '%(message)s' at %(module)s.%(funcName)s",
+      "datefmt": "%Y-%m-%d %H:%M:%S %z"
+    }
+  },
+  "filters": {
+    "info": {
+      "()": "logger.setup.OnlyInfoFilter",
+      "name": ""
+    }
+  },
+  "handlers": {
+    "debug": {
+      "class": "logging.StreamHandler",
+      "formatter": "general",
+      "level": "DEBUG",
+      "stream": "ext://sys.stdout"
+    },
+    "app_info": {
+      "class": "logging.handlers.RotatingFileHandler",
+      "formatter": "general",
+      "level": "INFO",
+      "filters": ["info"],
+      "filename": "src/logs/info.log",
+      "maxBytes": 10485760,
+      "backupCount": 3
+    },
+    "app_warnings": {
+      "class": "logging.handlers.RotatingFileHandler",
+      "formatter": "general",
+      "level": "WARNING",
+      "filename": "src/logs/warnings.log",
+      "maxBytes": 10485760,
+      "backupCount": 3
+    }
+  },
+  "loggers": {
+    "scriptorium": {
+      "level": "DEBUG",
+      "handlers": ["debug", "app_info", "app_warnings"]
+    }
+  }
+}

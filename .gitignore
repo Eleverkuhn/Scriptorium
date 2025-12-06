@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+.coverage
 
 # Virtual environments
 .venv
@@ -15,11 +16,13 @@ wheels/
 # Excel
 *.xlsx
 
+# logs
+logs/
+
 # Archive
 archive/
 filtered/
 succeed/
 py_archive/
 
-cache.json
 test_data.json
