@@ -9,7 +9,7 @@
   },
   "filters": {
     "info": {
-      "()": "logger.setup.OnlyInfoFilter",
+      "()": "utils.OnlyInfoFilter",
       "name": ""
     }
   },
