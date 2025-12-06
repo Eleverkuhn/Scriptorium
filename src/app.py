@@ -3,6 +3,7 @@ import re
 from playwright.sync_api import sync_playwright, Page, Playwright
 
 from config import CACHE_FILE, DOWNLOAD_DIR
+from utils import Base
 
 
 class Scriptorium:
@@ -10,7 +11,7 @@ class Scriptorium:
         pass
 
 
-class Scraper:
+class Scraper(Base):
     base_url = "https://www.list-org.com"
     pages_to_inspect = 4
     download_button = "a.btn.btn-outline-secondary.m-1"
@@ -26,7 +27,11 @@ class Scraper:
 
     def exec(self) -> list[str]:
         self.find_company_ids()
+        self.log("Company IDS collected")
+
+        self.log("Creating bulk download links")
         bulk_download_links = self.construct_bulk_download_links()
+
         return bulk_download_links
 
     def find_company_ids(self) -> None:
@@ -36,11 +41,13 @@ class Scraper:
                 self.inspect_page(page, page_number)
 
     def setup_browser(self, pw: Playwright) -> Page:
+        self.log("Setting up playwright")
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page()
         return page
 
     def inspect_page(self, page: Page, page_number: int) -> None:
+        self.log(f"Inspecting {self.construct_query_link(page_number)}")
         page.goto(self.construct_query_link(page_number), timeout=0)
         download_link = self.find_download_link(page)
         self.company_ids.append(self.get_company_ids(download_link))
@@ -49,6 +56,7 @@ class Scraper:
         link_elem = page.wait_for_selector(self.download_button, timeout=0)
         href = link_elem.get_attribute("href")
         download_link = f"{self.base_url}{href}"
+        self.log(f"Found download link: {download_link}")
         return download_link
 
     def get_company_ids(self, download_link: str) -> str:
