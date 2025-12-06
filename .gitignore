@@ -12,6 +12,9 @@ wheels/
 # UV 
 .python-version
 
+# Excel
+*.xlsx
+
 # Archive
 archive/
 filtered/
