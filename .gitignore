@@ -11,3 +11,12 @@ wheels/
 
 # UV 
 .python-version
+
+# Archive
+archive/
+filtered/
+succeed/
+py_archive/
+
+cache.json
+test_data.json
