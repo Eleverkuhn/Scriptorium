@@ -25,4 +25,6 @@ filtered/
 succeed/
 py_archive/
 
+# JSON
 test_data.json
+cache.json
