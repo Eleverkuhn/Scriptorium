@@ -4,8 +4,8 @@ from typing import override
 
 from playwright.sync_api import sync_playwright, Page, Playwright
 
-from config import CACHE_FILE, DOWNLOAD_DIR
-from utils import Base, ReaderJSON
+from config import CACHE_FILE, DOWNLOAD_DIR, ITERATIONS
+from utils import Base, ReaderJSON, LoggingConfig
 
 
 class Scriptorium:
@@ -14,7 +14,8 @@ class Scriptorium:
 
 
 class Scraper(Base):
-    pages_to_inspect = 4
+    base_url = "https://www.list-org.com"
+    pages_to_inspect = ITERATIONS  # Мы делаем 4 реквеста из 10 возможных для сбора данных
     download_button = "a.btn.btn-outline-secondary.m-1"
 
     def __init__(self) -> None:
@@ -26,14 +27,13 @@ class Scraper(Base):
     def inspection_range(self) -> range:
         return range(1, self.pages_to_inspect + 1)
 
-    def exec(self) -> list[str]:
+    def exec(self) -> None:
+        """
+        Главный метод. Запускает механизм поиска ID организаций с сайта
+        list-org.com и сохраняет их в файле cache.json
+        """
         self.find_company_ids()
         self.log("Company IDS collected")
-
-        self.log("Creating bulk download links")
-        download_links = self.link_constructor.get_download_links(self.company_ids)
-
-        return download_links
 
     def find_company_ids(self) -> None:
         with sync_playwright() as pw:
@@ -64,17 +64,22 @@ class Scraper(Base):
         link_elem = page.wait_for_selector(self.download_button, timeout=0)
         href = link_elem.get_attribute("href")
         download_link = f"{self.base_url}{href}"
+        self.link_constructor.save_company_ids(download_link)
         self.log(f"Found download link: {download_link}")
         return download_link
 
 
 class LinkConstructor:
     base_url = "https://www.list-org.com"
-    download_link_prefix = "excel_list.php?ids="
     okved = 62  # Сюда включены все подкоды 'Разработка компьютерного программного обеспечения, консультационные услуги в данной области и другие сопутствующие услуги (62)'
+    cache_slice = ITERATIONS * 100
 
     def __init__(self) -> None:
         self.cache = Cache()
+
+    @property
+    def download_link_prefix(self) -> str:
+        return "".join([self.base_url, "/excel_list.php?ids="])
 
     def query_link(self, page: int) -> str:
         query_link = (
@@ -87,7 +92,9 @@ class LinkConstructor:
 
     def save_company_ids(self, download_link: str) -> None:
         company_ids = self.get_company_ids(download_link)
-        for id in company_ids.strip():
+        LoggingConfig.get_logger().debug(f"company_ids: {company_ids}")
+        for id in company_ids.split(","):
+            LoggingConfig.get_logger().debug(f"id: {id}")
             self.cache.save_company_ids(id)
 
     def get_company_ids(self, download_link: str) -> str:
@@ -103,29 +110,25 @@ class LinkConstructor:
         company_ids = match.group(1)
         return company_ids
 
-    def get_download_links(self, company_ids: list[str]) -> list[str]:
-        """
-        list-org позволяет передавать в ?ids= не более 100 значений, поэтому
-        я создаю комплексную ссылку, совмещая два значения из уже сохранённых
-        ids с помощью 'get_company_ids'. Это позволяет в два раза уменьшить
-        количество запросов к их серверу
-        """
+    def get_download_links(self, amount: int = 200) -> list[str]:
+        company_ids = self.cache.load()["company_ids"]
         download_links = []
-        company_ids_copy = company_ids.copy()
-
-        while company_ids_copy:
-            elem = company_ids_copy.pop(0)
-            if company_ids_copy:
-                next_elem = company_ids_copy.pop(0)
-                compound_company_ids = ",".join([elem, next_elem])
-                download_link = self.construct_download_link(compound_company_ids)
-                download_links.append(download_link)
-            else:
-                download_links.append(self.construct_download_link(elem))
+        iterations = amount // 100
+        for iteration in range(iterations):
+            self.populate_download_links(company_ids, iteration, download_links)
         return download_links
 
-    def construct_download_link(self, company_ids: str) -> str:
-        return "".join([self.download_link_prefix, company_ids])
+    def populate_download_links(
+            self, company_ids: list[str], iteration: int, download_links: list
+    ) -> None:
+        start = iteration * 100
+        end = (iteration + 1) * 100
+        link = self.construct_download_link(company_ids[start:end])
+        download_links.append(link)
+
+    def construct_download_link(self, company_ids: list[str]) -> str:
+        joined_ids = ",".join(company_ids)
+        return "".join([self.download_link_prefix, joined_ids])
 
 
 class Cache(Base, ReaderJSON):

@@ -6,4 +6,6 @@ CACHE_FILE = BASE_DIR.joinpath("cache.json")
 DOWNLOAD_DIR = BASE_DIR.joinpath("data")
 LOGGING_CONFIG = BASE_DIR.joinpath("logger_config.json")
 
+ITERATIONS = 4
+
 TEST_DATA = BASE_DIR.joinpath("test_data.json")

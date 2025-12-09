@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from config import BASE_DIR, TEST_DATA
+from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS
 from app import Scraper, LinkConstructor, Cache
 from utils import ReaderJSON
 
@@ -27,21 +27,53 @@ def company_ids(constructor: LinkConstructor, download_links: list[str]) -> list
 @pytest.fixture
 def mock_cache_file() -> Path:
     mock_cache_file = BASE_DIR.joinpath("mock_cache.json")
-    cache_file_structure = {
-        "referers": [],
-        "company_ids": []
-    }
-    ReaderJSON(mock_cache_file).dump(cache_file_structure)
     yield mock_cache_file
     os.remove(mock_cache_file)
 
 
+@pytest.fixture
+def cache_reader(mock_cache_file: Path) -> ReaderJSON:
+    return ReaderJSON(mock_cache_file)
+
+
+@pytest.fixture
+def cache(mock_cache_file: Path, cache_reader: ReaderJSON) -> Path:
+    cache_file_structure = {
+        "referers": [],
+        "company_ids": []
+    }
+    cache_reader.dump(cache_file_structure)
+    return mock_cache_file
+
+
+@pytest.fixture
+def mock_company_ids() -> list[str]:
+    return [str(x) for x in range(100)]
+
+
+@pytest.fixture
+def cache_with_ids(cache: Path, cache_reader: ReaderJSON, mock_company_ids: list[str]):
+    content = cache_reader.load()
+    content["company_ids"].extend(mock_company_ids)
+    cache_reader.dump(content)
+
+
+@pytest.fixture
+def cache_with_multiple_ids(
+        cache: Path, cache_reader: ReaderJSON, mock_company_ids: list[str]
+) -> None:
+    content = cache_reader.load()
+    for _ in range(ITERATIONS):
+        content["company_ids"].extend(mock_company_ids)
+    cache_reader.dump(content)
+
+
 class TestScraper:
-    @pytest.mark.skip(reason="Execution time")
-    def test_exec(self, company_ids: list[str]) -> None:
-        bulk_download_links = Scraper().exec()
-        for company_id in company_ids:
-            assert company_id in " ".join(bulk_download_links)
+    def test_exec(self) -> None:
+        Scraper().exec()
+        cache = ReaderJSON(CACHE_FILE).load()
+        assert len(cache["referers"]) == 4
+        assert len(cache["company_ids"]) == 200
 
 
 class TestLinkConstructor:
@@ -55,27 +87,31 @@ class TestLinkConstructor:
         result = self.constructor.get_company_ids(download_link)
         assert len(result.split(",")) == 50
 
-    def test_construct_bulk_download_link_for_odd_ids_amount(
-            self, company_ids: list[str]
-    ) -> None:
-        download_links = self.constructor.get_download_links(company_ids)
+    @pytest.mark.usefixtures("cache_with_multiple_ids")
+    def test_get_download_links(self, cache_reader: ReaderJSON) -> None:
+        self.constructor.cache = cache_reader
+        download_links = self.constructor.get_download_links()
         assert len(download_links) == 2
 
-    def test_construct_bulk_download_link_for_even_ids_amoint(
-            self, company_ids: list[str]
+    @pytest.mark.usefixtures("cache_with_ids")
+    def test_construct_download_link(
+            self, cache_reader: ReaderJSON, mock_company_ids: list[str]
     ) -> None:
-        additional_ids = self.constructor.get_company_ids(self.download_links[0])
-        company_ids.append(additional_ids)
+        self.constructor.cache = cache_reader
+        ids_string = ",".join(mock_company_ids)
+        prefix = self.constructor.download_link_prefix
 
-        download_links = self.constructor.get_download_links(company_ids)
-        assert len(download_links) == 3
+        link = self.constructor.construct_download_link(mock_company_ids)
+
+        expected_result = "".join([prefix, ids_string])
+        assert link == expected_result
 
 
 class TestCache:
     @pytest.fixture(autouse=True)
-    def setUp(self, mock_cache_file: Path) -> None:
-        self.mock_cache_file = mock_cache_file
-        self.cache = Cache(mock_cache_file)
+    def setUp(self, cache) -> None:
+        self.cache_file = cache
+        self.cache = Cache(cache)
 
     def test_saves_url_to_cache_file(self) -> None:
         mock_url = "https://mockurl?mock_param=fake"
@@ -83,11 +119,12 @@ class TestCache:
         content = self.cache.load()
         assert mock_url in content["referers"]
 
-    def test_save_company_ids_saves_in_a_proper_format(self) -> None:
-        mock_ids = "213424,324242,23424,1111,123213"
-        for id in mock_ids.strip():
+    def test_save_company_ids_saves_in_a_proper_format(
+            self, mock_company_ids: list[str]
+    ) -> None:
+        for id in mock_company_ids:
             self.cache.save_company_ids(id)
         content = self.cache.load()
 
         for elem in content["company_ids"]:
-            assert elem in mock_ids
+            assert elem in mock_company_ids
