@@ -19,16 +19,22 @@ class LoggingConfig:
 
     @staticmethod
     def load_config() -> None:
-        config = ReaderJSON.load(LOGGING_CONFIG)
+        config = ReaderJSON(LOGGING_CONFIG).load()
         logging.config.dictConfig(config)
 
 
 class ReaderJSON:
-    @staticmethod
-    def load(file_path: Path) -> dict:
-        with open(file_path) as file:
+    def __init__(self, file_path: Path) -> None:
+        self.file_path = file_path
+
+    def load(self) -> dict:
+        with open(self.file_path) as file:
             content = json.load(file)
         return content
+
+    def dump(self, data: dict) -> None:
+        with open(self.file_path, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4, ensure_ascii=False)
 
 
 class OnlyInfoFilter(logging.Filter):
