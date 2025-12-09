@@ -1,9 +1,11 @@
 import re
+from pathlib import Path
+from typing import override
 
 from playwright.sync_api import sync_playwright, Page, Playwright
 
 from config import CACHE_FILE, DOWNLOAD_DIR
-from utils import Base
+from utils import Base, ReaderJSON
 
 
 class Scriptorium:
@@ -104,3 +106,23 @@ class Scraper(Base):
 
     def construct_download_link(self, company_ids: str) -> str:
         return "".join([self.download_link_prefix, company_ids])
+
+
+class Cache(Base, ReaderJSON):
+    @override
+    def __init__(self, file_path: Path = CACHE_FILE) -> None:
+        super().__init__(file_path)
+
+    def save_url(self, url: str) -> None:
+        content = self.load()
+        if url not in content["referers"]:
+            content["referers"].append(url)
+        self.dump(content)
+
+    def save_company_ids(self, company_ids: str) -> None:
+        content = self.load()
+        stripped_ids = company_ids.strip(",")
+        for company_id in stripped_ids:
+            if company_id not in content["company_ids"]:
+                content["company_ids"].append(company_id)
+        self.dump(content)

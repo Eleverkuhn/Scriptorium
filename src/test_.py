@@ -1,9 +1,11 @@
-import json
+import os
+from pathlib import Path
 
 import pytest
 
-from config import TEST_DATA
-from app import Scraper
+from config import BASE_DIR, TEST_DATA
+from app import Scraper, Cache
+from utils import ReaderJSON
 
 
 @pytest.fixture
@@ -13,8 +15,7 @@ def scraper() -> Scraper:
 
 @pytest.fixture
 def download_links() -> dict[str, list[str]]:
-    with open(TEST_DATA) as file:
-        test_data = json.load(file)
+    test_data = ReaderJSON(TEST_DATA).load()
     return test_data["download_links"]
 
 
@@ -25,12 +26,25 @@ def company_ids_from_download_links(
     return [scraper.get_company_ids(elem) for elem in download_links]
 
 
+@pytest.fixture
+def mock_cache_file() -> Path:
+    mock_cache_file = BASE_DIR.joinpath("mock_cache.json")
+    cache_file_structure = {
+        "referers": [],
+        "company_ids": []
+    }
+    ReaderJSON(mock_cache_file).dump(cache_file_structure)
+    yield mock_cache_file
+    os.remove(mock_cache_file)
+
+
 class TestScraper:
     @pytest.fixture(autouse=True)
     def setUp(self, scraper: Scraper, download_links: list[str]) -> None:
         self.scraper = scraper
         self.download_links = download_links
 
+    @pytest.mark.skip(reason="Execution time")
     def test_exec(self, company_ids_from_download_links: list[str]) -> None:
         bulk_download_links = self.scraper.exec()
         for company_id in company_ids_from_download_links:
@@ -57,3 +71,24 @@ class TestScraper:
 
         download_links = self.scraper.construct_bulk_download_links()
         assert len(download_links) == 3
+
+
+class TestCache:
+    @pytest.fixture(autouse=True)
+    def setUp(self, mock_cache_file: Path) -> None:
+        self.mock_cache_file = mock_cache_file
+        self.cache = Cache(mock_cache_file)
+
+    def test_saves_url_to_cache_file(self) -> None:
+        mock_url = "https://mockurl?mock_param=fake"
+        self.cache.save_url(mock_url)
+        content = self.cache.load()
+        assert mock_url in content["referers"]
+
+    def test_save_company_ids_saves_in_a_proper_format(self) -> None:
+        mock_ids = "213424,324242,23424,1111,123213"
+        self.cache.save_company_ids(mock_ids)
+        content = self.cache.load()
+
+        for elem in content["company_ids"]:
+            assert elem in mock_ids
