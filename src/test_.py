@@ -4,13 +4,13 @@ from pathlib import Path
 import pytest
 
 from config import BASE_DIR, TEST_DATA
-from app import Scraper, Cache
+from app import Scraper, LinkConstructor, Cache
 from utils import ReaderJSON
 
 
 @pytest.fixture
-def scraper() -> Scraper:
-    return Scraper()
+def constructor() -> LinkConstructor:
+    return LinkConstructor()
 
 
 @pytest.fixture
@@ -20,10 +20,8 @@ def download_links() -> dict[str, list[str]]:
 
 
 @pytest.fixture
-def company_ids_from_download_links(
-        scraper: Scraper, download_links: list[str]
-) -> list[str]:
-    return [scraper.get_company_ids(elem) for elem in download_links]
+def company_ids(constructor: LinkConstructor, download_links: list[str]) -> list[str]:
+    return [constructor.get_company_ids(elem) for elem in download_links]
 
 
 @pytest.fixture
@@ -39,37 +37,37 @@ def mock_cache_file() -> Path:
 
 
 class TestScraper:
-    @pytest.fixture(autouse=True)
-    def setUp(self, scraper: Scraper, download_links: list[str]) -> None:
-        self.scraper = scraper
-        self.download_links = download_links
-
     @pytest.mark.skip(reason="Execution time")
-    def test_exec(self, company_ids_from_download_links: list[str]) -> None:
-        bulk_download_links = self.scraper.exec()
-        for company_id in company_ids_from_download_links:
+    def test_exec(self, company_ids: list[str]) -> None:
+        bulk_download_links = Scraper().exec()
+        for company_id in company_ids:
             assert company_id in " ".join(bulk_download_links)
+
+
+class TestLinkConstructor:
+    @pytest.fixture(autouse=True)
+    def setUp(self, constructor: LinkConstructor, download_links: list[str]) -> None:
+        self.constructor = constructor
+        self.download_links = download_links
 
     def test_get_company_ids_regex_pattern_re(self) -> None:
         download_link = self.download_links[0]
-        result = self.scraper.get_company_ids(download_link)
+        result = self.constructor.get_company_ids(download_link)
         assert len(result.split(",")) == 50
 
     def test_construct_bulk_download_link_for_odd_ids_amount(
-            self, company_ids_from_download_links: list[str]
+            self, company_ids: list[str]
     ) -> None:
-        self.scraper.company_ids = company_ids_from_download_links
-        download_links = self.scraper.construct_bulk_download_links()
+        download_links = self.constructor.get_download_links(company_ids)
         assert len(download_links) == 2
 
     def test_construct_bulk_download_link_for_even_ids_amoint(
-            self, company_ids_from_download_links: list[str]
+            self, company_ids: list[str]
     ) -> None:
-        self.scraper.company_ids = company_ids_from_download_links
-        additional_ids = self.scraper.get_company_ids(self.download_links[0])
-        self.scraper.company_ids.append(additional_ids)
+        additional_ids = self.constructor.get_company_ids(self.download_links[0])
+        company_ids.append(additional_ids)
 
-        download_links = self.scraper.construct_bulk_download_links()
+        download_links = self.constructor.get_download_links(company_ids)
         assert len(download_links) == 3
 
 
@@ -87,7 +85,8 @@ class TestCache:
 
     def test_save_company_ids_saves_in_a_proper_format(self) -> None:
         mock_ids = "213424,324242,23424,1111,123213"
-        self.cache.save_company_ids(mock_ids)
+        for id in mock_ids.strip():
+            self.cache.save_company_ids(id)
         content = self.cache.load()
 
         for elem in content["company_ids"]:
