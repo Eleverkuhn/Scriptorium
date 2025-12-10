@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import override
 
@@ -6,8 +7,10 @@ import requests
 import pandas
 from playwright.sync_api import sync_playwright, Page, Playwright, Cookie
 
-from config import CACHE_FILE, DOWNLOAD_DIR, ITERATIONS
+from config import CACHE_FILE, DOWNLOAD_DIR, EXPORT_DIR, ITERATIONS
 from utils import Base, ReaderJSON, LoggingConfig
+
+type NormalizedData = list[dict[str, str | int]]
 
 
 class Scriptorium:
@@ -231,17 +234,19 @@ class CompanyDataDownloader(Base):
         self.log(f"File {file_name} successfully downloaded in {self.dir}")
 
 
-class ReaderExcel:
-    dir = DOWNLOAD_DIR
-    columns = [
+class CompanySourceData:
+    source_columns = [
         "ИНН",
         "Юридическое наименование",
         "Сотрудников",
         "Сайт",
         "Юридический адрес",
         "Телефон (один из)",
-        "E-mail"
     ]
+
+
+class ReaderExcel(CompanySourceData):
+    dir = DOWNLOAD_DIR
 
     def exec(self) -> pandas.DataFrame:
         files = self.get_company_data_files()
@@ -250,8 +255,108 @@ class ReaderExcel:
 
     def get_company_data_files(self) -> list[pandas.DataFrame]:
         return [
-            pandas.read_excel(file, usecols=self.columns)
+            pandas.read_excel(file, usecols=self.source_columns)
             for file
             in self.dir.iterdir()
             if file.is_file() and file.suffix == ".xlsx"
         ]
+
+
+class Normalizer(CompanySourceData):
+    blank = "—"
+
+    def __init__(self, company_data: pandas.DataFrame) -> None:
+        self.company_data = company_data
+
+    def exec(self) -> NormalizedData:
+        normalized_data = [
+            asdict(self.normalize_row(row))
+            for _, row
+            in self.company_data.iterrows()
+        ]
+        return normalized_data
+
+    def normalize_row(self, row: pandas.Series) -> "CompanyData":
+        return CompanyData(
+            inn=self.normalize_field(row, 0),
+            name=self.normalize_field(row, 1),
+            employees=int(self.normalize_field(row, 2)),
+            region=self.normalize_region(row, 4),
+            contacts=self.normalize_phone(row, 5),
+            site=self.normalize_field(row, 3),
+        )
+
+    def normalize_region(self, row: pandas.Series, index: int) -> str:
+        normalized_field = self.normalize_field(row, index).split(", ")
+        city, region = normalized_field[1], normalized_field[2]
+        if self.check_moscow_in_city_field(city):
+            return "Г. МОСКВА"
+        elif self.check_spb_in_city_field(city):
+            return "Г. САНКТ-ПЕТЕРБУРГ"
+        else:
+            return ",".join([city, region])
+
+    def normalize_phone(self, row: pandas.Series, index: int) -> str:
+        normalized_field = self.normalize_field(row, index)
+        normalized_phone = normalized_field.replace(" ", "").replace("(", "-").replace(")", "-")
+        return normalized_phone
+
+    def normalize_field(self, row: pandas.Series, index: int) -> str:
+        source_row = row[self.source_columns[index]]
+        if pandas.notna(source_row):
+            return source_row
+        return self.blank
+
+    def check_moscow_in_city_field(self, city: str) -> bool:
+        pattern = re.compile(
+            r"(?:г\.?\s*)?Москва",
+            re.IGNORECASE
+        )
+        return bool(pattern.search(city))
+
+    def check_spb_in_city_field(self, city: str) -> bool:
+        pattern = re.compile(
+            r"(?:г\.?\s*)?Санкт[-\s]?Петербург",
+            re.IGNORECASE
+        )
+        return bool(pattern.search(city))
+
+
+@dataclass
+class CompanyData:
+    inn: str
+    name: str
+    employees: int
+    region: str
+    contacts: str
+    site: str
+    source: str = "www.list-org.com"
+    okved_main: int = 62  # Т.к. мы делали запрос к list-org.com по ОКВЭД коду
+                          # мы гарантированно знаем, что компания занимается
+                          # смежной детяельностью
+
+
+class Exporter:
+    columns_order = [
+        "inn",
+        "name",
+        "employees",
+        "okved_main",
+        "region",
+        "contacts",
+        "site",
+        "source"
+    ]
+
+    def __init__(self, normalized_data: NormalizedData) -> None:
+        self.normalized_data = normalized_data
+
+    @property
+    def file_path(self) -> Path:
+        return EXPORT_DIR.joinpath("companies.csv")
+
+    def exec(self) -> None:
+        data_frame = pandas.DataFrame(
+            self.normalized_data, columns=self.columns_order
+        )
+        data_frame.to_csv(self.file_path, index=False, encoding="utf-8")

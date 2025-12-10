@@ -3,14 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS, DOWNLOAD_DIR
+# from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS, DOWNLOAD_DIR
+import config
 from app import (
     Scraper,
     LinkConstructor,
     Cache,
     CompanyDataDownloader,
     ReaderExcel,
-    Normalizer
+    Normalizer,
+    Exporter
 )
 from utils import ReaderJSON, LoggingConfig
 
@@ -22,7 +24,7 @@ def constructor() -> LinkConstructor:
 
 @pytest.fixture
 def download_links() -> dict[str, list[str]]:
-    test_data = ReaderJSON(TEST_DATA).load()
+    test_data = ReaderJSON(config.TEST_DATA).load()
     return test_data["download_links"]
 
 
@@ -33,7 +35,7 @@ def company_ids(constructor: LinkConstructor, download_links: list[str]) -> list
 
 @pytest.fixture
 def mock_cache_file() -> Path:
-    mock_cache_file = BASE_DIR.joinpath("mock_cache.json")
+    mock_cache_file = config.BASE_DIR.joinpath("mock_cache.json")
     yield mock_cache_file
     os.remove(mock_cache_file)
 
@@ -70,7 +72,7 @@ def cache_with_multiple_ids(
         cache: Path, cache_reader: ReaderJSON, mock_company_ids: list[str]
 ) -> None:
     content = cache_reader.load()
-    for _ in range(ITERATIONS):
+    for _ in range(config.ITERATIONS):
         content["company_ids"].extend(mock_company_ids)
     cache_reader.dump(content)
 
@@ -101,7 +103,7 @@ def downloaded_files(user_cookie: str, real_download_links: list[str]) -> None:
 def company_data_files() -> list[Path]:
     downloaded_files = [
         file for file
-        in DOWNLOAD_DIR.iterdir()
+        in config.DOWNLOAD_DIR.iterdir()
         if file.is_file() and file.suffix == ".xlsx"
     ]
     return downloaded_files
@@ -111,7 +113,7 @@ def company_data_files() -> list[Path]:
 @pytest.mark.usefixtures("scraper_result")
 class TestScraper:
     def test_cache_is_set(self) -> None:
-        cache = ReaderJSON(CACHE_FILE).load()
+        cache = ReaderJSON(config.CACHE_FILE).load()
         assert len(cache["referers"]) == 4
         assert len(cache["company_ids"]) == 200
 
@@ -173,11 +175,6 @@ class TestCache:
             assert elem in mock_company_ids
 
 
-class TestNormalizer:
-    def test(self) -> None:
-        pass
-
-
 class TestCompanyDataDownloader:
     @pytest.fixture(autouse=True)
     def setup(self, company_data_files: list[Path]) -> None:
@@ -197,3 +194,11 @@ class TestReaderExcel:
     def test_exec_merge_multiple_files_correctly(self) -> None:
         company_data = ReaderExcel().exec()
         assert len(company_data) == 200
+
+
+class TestExporter:
+    def test_exec_creates_companies_csv(self) -> None:
+        company_data = ReaderExcel().exec()
+        normalized_data = Normalizer(company_data).exec()
+        Exporter(normalized_data).exec()
+        assert config.EXPORT_DIR.joinpath("companies.csv").exists()
