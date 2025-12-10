@@ -14,7 +14,7 @@ wheels/
 .python-version
 
 # logs
-logs/
+logs/*
 
 # JSON
 test_data.json
