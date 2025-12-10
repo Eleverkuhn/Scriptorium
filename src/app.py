@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 from typing import override
 
+import requests
 from playwright.sync_api import sync_playwright, Page, Playwright, Cookie
 
 from config import CACHE_FILE, DOWNLOAD_DIR, ITERATIONS
@@ -9,8 +10,12 @@ from utils import Base, ReaderJSON, LoggingConfig
 
 
 class Scriptorium:
+    def __init__(self) -> None:
+        self.scraper = Scraper()
+
     def exec(self) -> None:
-        pass
+        self.scraper.exec()
+        user_cookie = self.scraper.user_cookie
 
 
 class Scraper(Base):
@@ -31,7 +36,9 @@ class Scraper(Base):
     def exec(self) -> None:
         """
         Главный метод. Запускает механизм поиска ID организаций с сайта
-        list-org.com и сохраняет их в файле cache.json
+        list-org.com, сохраняет их в файле cache.json и достаёт user cookie
+        из request headers для дальнейшего использования при загрузке xlsx
+        файлов с данными о компаниях
         """
         self.find_company_ids()
         self.log("Company IDS collected")
@@ -93,6 +100,39 @@ class Scraper(Base):
             return cookie.get("value")
 
 
+class CompanyDataDownloader(Base):
+    dir = DOWNLOAD_DIR
+
+    def __init__(self, user_cookie: str, download_links: list[str]) -> None:
+        self.user_cookie = user_cookie
+        self.download_links = download_links
+
+    @property
+    def headers(self) -> dict[str, str]:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive",
+            "Cookie": f"user={self.user_cookie}"
+        }
+        return headers
+
+    def exec(self) -> None:
+        for number, download_link in enumerate(self.download_links):
+            response = self.make_request(download_link)
+            self.save_file(response, number)
+
+    def make_request(self, download_link: str) -> requests.Response:
+        return requests.get(download_link, stream=True, headers=self.headers)
+
+    def save_file(self, response: requests.Response, number: int) -> None:
+        with open(self.dir.joinpath(f"data_{number}.xlsx"), "wb") as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    file.write(chunk)
+
+
 class LinkConstructor:
     base_url = "https://www.list-org.com"
     okved = 62  # Сюда включены все подкоды 'Разработка компьютерного программного обеспечения, консультационные услуги в данной области и другие сопутствующие услуги (62)'
@@ -110,8 +150,8 @@ class LinkConstructor:
         list-org.com отдаёт cookie только при открытии страницы с детальной
         информацией о компании
         """
-        id = self.cache.load()["company_ids"][0]
-        return "".join([self.base_url, "/company/", id])
+        # id = self.cache.load()["company_ids"][0]
+        return "".join([self.base_url, "/company/", self.cache.first_company_id])
 
     def query_link(self, page: int) -> str:
         query_link = (
@@ -165,6 +205,10 @@ class Cache(Base, ReaderJSON):
     @override
     def __init__(self, file_path: Path = CACHE_FILE) -> None:
         super().__init__(file_path)
+
+    @property
+    def first_company_id(self) -> str:
+        return self.load()["company_ids"][0]
 
     def save_url(self, url: str) -> None:
         content = self.load()

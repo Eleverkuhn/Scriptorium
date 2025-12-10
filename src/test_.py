@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS
-from app import Scraper, LinkConstructor, Cache
+from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS, DOWNLOAD_DIR
+from app import Scraper, LinkConstructor, Cache, CompanyDataDownloader
 from utils import ReaderJSON
 
 
@@ -75,6 +75,19 @@ def scraper_result() -> Scraper:
     return scraper
 
 
+@pytest.fixture
+def user_cookie(scraper_result: Scraper) -> str:
+    return scraper_result.user_cookie
+
+
+@pytest.fixture
+def real_download_links(constructor: LinkConstructor) -> list[str]:
+    return constructor.get_download_links()
+    # real_company_id = Cache(CACHE_FILE).first_company_id
+    # return "".join([constructor.download_link_prefix, real_company_id])
+
+
+@pytest.mark.skip(reason="Execution time")
 @pytest.mark.usefixtures("scraper_result")
 class TestScraper:
     def test_cache_is_set(self) -> None:
@@ -84,6 +97,19 @@ class TestScraper:
 
     def test_user_cookie_is_set(self, scraper_result: Scraper) -> None:
         assert scraper_result.user_cookie
+
+
+class TestCompanyDataDownloader:
+    def test_amount_of_downloaded_files(
+            self, user_cookie: str, real_download_links: list[str]
+    ) -> None:
+        CompanyDataDownloader(user_cookie, real_download_links).exec()
+        downloaded_files = [
+            file for file
+            in DOWNLOAD_DIR.iterdir()
+            if file.is_file()
+        ]
+        assert len(downloaded_files) == 2
 
 
 class TestLinkConstructor:
