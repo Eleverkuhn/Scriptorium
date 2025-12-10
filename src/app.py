@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import override
 
-from playwright.sync_api import sync_playwright, Page, Playwright
+from playwright.sync_api import sync_playwright, Page, Playwright, Cookie
 
 from config import CACHE_FILE, DOWNLOAD_DIR, ITERATIONS
 from utils import Base, ReaderJSON, LoggingConfig
@@ -22,6 +22,7 @@ class Scraper(Base):
         self.company_ids = []
         self.link_constructor = LinkConstructor()
         self.cache = Cache()
+        self.user_cookie: str | None = None  # User cookie собирается через playwright для дальнейших HTTP реквестов
 
     @property
     def inspection_range(self) -> range:
@@ -43,13 +44,15 @@ class Scraper(Base):
                     self.inspect_page(page, page_number)
                 except ValueError:
                     continue
+            self.set_user_cookie(page)
 
     def setup_browser(self, pw: Playwright) -> Page:
         self.log("Setting up playwright")
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(headless=False)
         page = browser.new_page()
         return page
 
+    # TODO: split page inspection into a distinct class
     def inspect_page(self, page: Page, page_number: int) -> None:
         query_link = self.link_constructor.query_link(page_number)
         self.cache.save_url(query_link)
@@ -68,11 +71,31 @@ class Scraper(Base):
         self.log(f"Found download link: {download_link}")
         return download_link
 
+    def set_user_cookie(self, page: Page) -> None:
+        user_cookie = self.get_user_cookie(page)
+        if not user_cookie:
+            self.update_cookies(page)
+            user_cookie = self.get_user_cookie(page)
+        self.user_cookie = user_cookie
+
+    def update_cookies(self, page: Page) -> None:
+        company_page = self.link_constructor.random_company_page_link
+        page.goto(company_page, timeout=0)
+
+    def get_user_cookie(self, page: Page) -> str | None:
+        cookies = page.context.cookies()
+        user_cookie = self.get_user_cookie_from_headers(cookies)
+        return user_cookie
+
+    def get_user_cookie_from_headers(self, cookies: list[Cookie]) -> str | None:
+        cookie = next((c for c in cookies if c.get("name") == "user"), None)
+        if cookie:
+            return cookie.get("value")
+
 
 class LinkConstructor:
     base_url = "https://www.list-org.com"
     okved = 62  # Сюда включены все подкоды 'Разработка компьютерного программного обеспечения, консультационные услуги в данной области и другие сопутствующие услуги (62)'
-    cache_slice = ITERATIONS * 100
 
     def __init__(self) -> None:
         self.cache = Cache()
@@ -80,6 +103,15 @@ class LinkConstructor:
     @property
     def download_link_prefix(self) -> str:
         return "".join([self.base_url, "/excel_list.php?ids="])
+
+    @property
+    def random_company_page_link(self) -> str:
+        """
+        list-org.com отдаёт cookie только при открытии страницы с детальной
+        информацией о компании
+        """
+        id = self.cache.load()["company_ids"][0]
+        return "".join([self.base_url, "/company/", id])
 
     def query_link(self, page: int) -> str:
         query_link = (
@@ -92,9 +124,7 @@ class LinkConstructor:
 
     def save_company_ids(self, download_link: str) -> None:
         company_ids = self.get_company_ids(download_link)
-        LoggingConfig.get_logger().debug(f"company_ids: {company_ids}")
         for id in company_ids.split(","):
-            LoggingConfig.get_logger().debug(f"id: {id}")
             self.cache.save_company_ids(id)
 
     def get_company_ids(self, download_link: str) -> str:

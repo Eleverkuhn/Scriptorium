@@ -68,12 +68,22 @@ def cache_with_multiple_ids(
     cache_reader.dump(content)
 
 
+@pytest.fixture(scope="class")
+def scraper_result() -> Scraper:
+    scraper = Scraper()
+    scraper.exec()
+    return scraper
+
+
+@pytest.mark.usefixtures("scraper_result")
 class TestScraper:
-    def test_exec(self) -> None:
-        Scraper().exec()
+    def test_cache_is_set(self) -> None:
         cache = ReaderJSON(CACHE_FILE).load()
         assert len(cache["referers"]) == 4
         assert len(cache["company_ids"]) == 200
+
+    def test_user_cookie_is_set(self, scraper_result: Scraper) -> None:
+        assert scraper_result.user_cookie
 
 
 class TestLinkConstructor:
