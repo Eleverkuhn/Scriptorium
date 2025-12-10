@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import override
 
 import requests
+import pandas
 from playwright.sync_api import sync_playwright, Page, Playwright, Cookie
 
 from config import CACHE_FILE, DOWNLOAD_DIR, ITERATIONS
@@ -12,10 +13,13 @@ from utils import Base, ReaderJSON, LoggingConfig
 class Scriptorium:
     def __init__(self) -> None:
         self.scraper = Scraper()
+        self.link_constructor = LinkConstructor()
 
     def exec(self) -> None:
         self.scraper.exec()
         user_cookie = self.scraper.user_cookie
+        download_links = self.link_constructor.get_download_links()
+        CompanyDataDownloader(user_cookie, download_links).exec()
 
 
 class Scraper(Base):
@@ -98,39 +102,6 @@ class Scraper(Base):
         cookie = next((c for c in cookies if c.get("name") == "user"), None)
         if cookie:
             return cookie.get("value")
-
-
-class CompanyDataDownloader(Base):
-    dir = DOWNLOAD_DIR
-
-    def __init__(self, user_cookie: str, download_links: list[str]) -> None:
-        self.user_cookie = user_cookie
-        self.download_links = download_links
-
-    @property
-    def headers(self) -> dict[str, str]:
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Connection": "keep-alive",
-            "Cookie": f"user={self.user_cookie}"
-        }
-        return headers
-
-    def exec(self) -> None:
-        for number, download_link in enumerate(self.download_links):
-            response = self.make_request(download_link)
-            self.save_file(response, number)
-
-    def make_request(self, download_link: str) -> requests.Response:
-        return requests.get(download_link, stream=True, headers=self.headers)
-
-    def save_file(self, response: requests.Response, number: int) -> None:
-        with open(self.dir.joinpath(f"data_{number}.xlsx"), "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    file.write(chunk)
 
 
 class LinkConstructor:
@@ -223,3 +194,56 @@ class Cache(Base, ReaderJSON):
         if id not in content["company_ids"]:
             content["company_ids"].append(id)
         self.dump(content)
+
+
+class CompanyDataDownloader(Base):
+    dir = DOWNLOAD_DIR
+
+    def __init__(self, user_cookie: str, download_links: list[str]) -> None:
+        self.user_cookie = user_cookie
+        self.download_links = download_links
+
+    @property
+    def headers(self) -> dict[str, str]:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive",
+            "Cookie": f"user={self.user_cookie}"
+        }
+        return headers
+
+    def exec(self) -> None:
+        for number, download_link in enumerate(self.download_links):
+            response = self.make_request(download_link)
+            self.save_file(response, number)
+
+    def make_request(self, download_link: str) -> requests.Response:
+        return requests.get(download_link, stream=True, headers=self.headers)
+
+    def save_file(self, response: requests.Response, number: int) -> None:
+        file_name = f"data_{number}.xlsx"
+        with open(self.dir.joinpath(file_name), "wb") as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    file.write(chunk)
+        self.log(f"File {file_name} successfully downloaded in {self.dir}")
+
+
+class ReaderExcel:
+    columns = [
+        "ИНН",
+        "Юридическое наименование",
+        "Сотрудников",
+        "Сайт",
+        "Юридический адрес",
+        "Телефон (один из)",
+        "E-mail"
+    ]
+
+    def __init__(self, file: Path) -> None:
+        self.content = pandas.read_excel(file, usecols=self.columns)
+
+    def exec(self) -> pandas.DataFrame:
+        return self.content

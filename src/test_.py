@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 
 from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS, DOWNLOAD_DIR
-from app import Scraper, LinkConstructor, Cache, CompanyDataDownloader
-from utils import ReaderJSON
+from app import (
+    Scraper, LinkConstructor, Cache, CompanyDataDownloader, ReaderExcel
+)
+from utils import ReaderJSON, LoggingConfig
 
 
 @pytest.fixture
@@ -83,8 +85,28 @@ def user_cookie(scraper_result: Scraper) -> str:
 @pytest.fixture
 def real_download_links(constructor: LinkConstructor) -> list[str]:
     return constructor.get_download_links()
-    # real_company_id = Cache(CACHE_FILE).first_company_id
-    # return "".join([constructor.download_link_prefix, real_company_id])
+
+
+@pytest.fixture
+def downloaded_files(user_cookie: str, real_download_links: list[str]) -> None:
+    CompanyDataDownloader(user_cookie, real_download_links).exec()
+
+
+@pytest.fixture
+def company_data_files() -> list[Path]:
+    downloaded_files = [
+        file for file
+        in DOWNLOAD_DIR.iterdir()
+        if file.is_file() and file.suffix == ".xlsx"
+    ]
+    return downloaded_files
+
+
+@pytest.fixture
+def reader(request: pytest.FixtureRequest) -> ReaderExcel:
+    file = DOWNLOAD_DIR.joinpath(request.param)
+    LoggingConfig.get_logger().debug(file)
+    return ReaderExcel(file)
 
 
 @pytest.mark.skip(reason="Execution time")
@@ -97,19 +119,6 @@ class TestScraper:
 
     def test_user_cookie_is_set(self, scraper_result: Scraper) -> None:
         assert scraper_result.user_cookie
-
-
-class TestCompanyDataDownloader:
-    def test_amount_of_downloaded_files(
-            self, user_cookie: str, real_download_links: list[str]
-    ) -> None:
-        CompanyDataDownloader(user_cookie, real_download_links).exec()
-        downloaded_files = [
-            file for file
-            in DOWNLOAD_DIR.iterdir()
-            if file.is_file()
-        ]
-        assert len(downloaded_files) == 2
 
 
 class TestLinkConstructor:
@@ -164,3 +173,25 @@ class TestCache:
 
         for elem in content["company_ids"]:
             assert elem in mock_company_ids
+
+
+class TestCompanyDataDownloader:
+    @pytest.fixture(autouse=True)
+    def setup(self, company_data_files: list[Path]) -> None:
+        self.company_data_files = company_data_files
+
+    def test_amount_of_downloaded_files(self) -> None:
+        assert len(self.company_data_files) == 2
+
+    def test_size_is_valid(self) -> None:
+        min_size = 25 * 1024
+        max_size = 27 * 1024
+        for file in self.company_data_files:
+            assert file.stat().st_size in range(min_size, max_size)
+
+
+@pytest.mark.parametrize("reader", ["data_0.xlsx"], indirect=True)
+class TestReaderExcel:
+    @pytest.fixture(autouse=True)
+    def setUp(self, reader: ReaderExcel) -> None:
+        self.reader = reader
