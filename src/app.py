@@ -8,21 +8,34 @@ import pandas
 from playwright.sync_api import sync_playwright, Page, Playwright, Cookie
 
 from config import CACHE_FILE, DOWNLOAD_DIR, EXPORT_DIR, ITERATIONS
-from utils import Base, ReaderJSON, LoggingConfig
+from utils import Base, ReaderJSON
 
 type NormalizedData = list[dict[str, str | int]]
 
 
-class Scriptorium:
+class Scriptorium(Base):
     def __init__(self) -> None:
         self.scraper = Scraper()
         self.link_constructor = LinkConstructor()
 
     def exec(self) -> None:
+        user_cookie, download_links = self.find_download_links_and_set_cookie()
+        CompanyDataDownloader(user_cookie, download_links).exec()
+
+        company_data = ReaderExcel().exec()
+        self.log("Reading downloaded .xlsx files")
+
+        normalized_data = Normalizer(company_data).exec()
+        self.log("Data normalized, load it to companies.csv")
+
+        Exporter(normalized_data).exec()
+        self.log("File comapnies.csv created at data/companies.csv")
+
+    def find_download_links_and_set_cookie(self) -> tuple[str, list[str]]:
         self.scraper.exec()
         user_cookie = self.scraper.user_cookie
         download_links = self.link_constructor.get_download_links()
-        CompanyDataDownloader(user_cookie, download_links).exec()
+        return (user_cookie, download_links)
 
 
 class Scraper(Base):
@@ -66,7 +79,6 @@ class Scraper(Base):
         page = browser.new_page()
         return page
 
-    # TODO: split page inspection into a distinct class
     def inspect_page(self, page: Page, page_number: int) -> None:
         query_link = self.link_constructor.query_link(page_number)
         self.cache.save_url(query_link)
@@ -124,7 +136,6 @@ class LinkConstructor:
         list-org.com отдаёт cookie только при открытии страницы с детальной
         информацией о компании
         """
-        # id = self.cache.load()["company_ids"][0]
         return "".join([self.base_url, "/company/", self.cache.first_company_id])
 
     def query_link(self, page: int) -> str:
@@ -154,7 +165,14 @@ class LinkConstructor:
         company_ids = match.group(1)
         return company_ids
 
-    def get_download_links(self, amount: int = 200) -> list[str]:
+    def get_download_links(self, amount: int = 100) -> list[str]:
+        """
+        List-org.com определяет запросы от ботов и не даёт запросить скачивание
+        более 100 файлов и выдаёт капчу. Когда пробуешь вставлять эти же ссылки
+        вручную, то капча не срабатывает. В какие-то дни у меня получалось
+        скачать 2 файла на 200 записей и 3 файла на 250 записей, но для
+        безопасности я решил оставить 100, потому что это работает всегда
+        """
         company_ids = self.cache.load()["company_ids"]
         download_links = []
         iterations = amount // 100

@@ -136,7 +136,7 @@ class TestLinkConstructor:
     def test_get_download_links(self, cache_reader: ReaderJSON) -> None:
         self.constructor.cache = cache_reader
         download_links = self.constructor.get_download_links()
-        assert len(download_links) == 2
+        assert len(download_links) == 1
 
     @pytest.mark.usefixtures("cache_with_ids")
     def test_construct_download_link(
@@ -181,7 +181,7 @@ class TestCompanyDataDownloader:
         self.company_data_files = company_data_files
 
     def test_amount_of_downloaded_files(self) -> None:
-        assert len(self.company_data_files) == 2
+        assert len(self.company_data_files) == 1
 
     def test_size_is_valid(self) -> None:
         min_size = 25 * 1024
@@ -193,7 +193,7 @@ class TestCompanyDataDownloader:
 class TestReaderExcel:
     def test_exec_merge_multiple_files_correctly(self) -> None:
         company_data = ReaderExcel().exec()
-        assert len(company_data) == 200
+        assert len(company_data) == 100
 
 
 class TestExporter:
