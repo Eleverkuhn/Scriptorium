@@ -11,7 +11,7 @@ cd scriptorium
 Создать виртуальное окружение
 ```bash
 python3 -m venv my-env
-source venv/bin/activate
+source my-env/bin/activate
 ```
 Установить зависимости
 ```bash
