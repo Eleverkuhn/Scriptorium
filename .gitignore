@@ -13,17 +13,8 @@ wheels/
 # UV 
 .python-version
 
-# Excel
-*.xlsx
-
 # logs
 logs/
-
-# Archive
-archive/
-filtered/
-succeed/
-py_archive/
 
 # JSON
 test_data.json
