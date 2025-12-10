@@ -5,7 +5,12 @@ import pytest
 
 from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS, DOWNLOAD_DIR
 from app import (
-    Scraper, LinkConstructor, Cache, CompanyDataDownloader, ReaderExcel
+    Scraper,
+    LinkConstructor,
+    Cache,
+    CompanyDataDownloader,
+    ReaderExcel,
+    Normalizer
 )
 from utils import ReaderJSON, LoggingConfig
 
@@ -102,13 +107,6 @@ def company_data_files() -> list[Path]:
     return downloaded_files
 
 
-@pytest.fixture
-def reader(request: pytest.FixtureRequest) -> ReaderExcel:
-    file = DOWNLOAD_DIR.joinpath(request.param)
-    LoggingConfig.get_logger().debug(file)
-    return ReaderExcel(file)
-
-
 @pytest.mark.skip(reason="Execution time")
 @pytest.mark.usefixtures("scraper_result")
 class TestScraper:
@@ -175,6 +173,11 @@ class TestCache:
             assert elem in mock_company_ids
 
 
+class TestNormalizer:
+    def test(self) -> None:
+        pass
+
+
 class TestCompanyDataDownloader:
     @pytest.fixture(autouse=True)
     def setup(self, company_data_files: list[Path]) -> None:
@@ -190,8 +193,7 @@ class TestCompanyDataDownloader:
             assert file.stat().st_size in range(min_size, max_size)
 
 
-@pytest.mark.parametrize("reader", ["data_0.xlsx"], indirect=True)
 class TestReaderExcel:
-    @pytest.fixture(autouse=True)
-    def setUp(self, reader: ReaderExcel) -> None:
-        self.reader = reader
+    def test_exec_merge_multiple_files_correctly(self) -> None:
+        company_data = ReaderExcel().exec()
+        assert len(company_data) == 200

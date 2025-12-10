@@ -232,6 +232,7 @@ class CompanyDataDownloader(Base):
 
 
 class ReaderExcel:
+    dir = DOWNLOAD_DIR
     columns = [
         "ИНН",
         "Юридическое наименование",
@@ -242,8 +243,15 @@ class ReaderExcel:
         "E-mail"
     ]
 
-    def __init__(self, file: Path) -> None:
-        self.content = pandas.read_excel(file, usecols=self.columns)
-
     def exec(self) -> pandas.DataFrame:
-        return self.content
+        files = self.get_company_data_files()
+        company_data = pandas.concat(files, ignore_index=True)
+        return company_data
+
+    def get_company_data_files(self) -> list[pandas.DataFrame]:
+        return [
+            pandas.read_excel(file, usecols=self.columns)
+            for file
+            in self.dir.iterdir()
+            if file.is_file() and file.suffix == ".xlsx"
+        ]
