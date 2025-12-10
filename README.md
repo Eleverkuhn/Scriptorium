@@ -6,7 +6,7 @@
 Скопировать репозиторий
 ```bash
 git clone https://github.com/Eleverkuhn/Scriptorium
-cd scriptorium
+cd Scriptorium
 ```
 Создать виртуальное окружение
 ```bash
