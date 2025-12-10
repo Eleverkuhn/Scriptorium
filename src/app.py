@@ -7,8 +7,8 @@ import requests
 import pandas
 from playwright.sync_api import sync_playwright, Page, Playwright, Cookie
 
-from config import CACHE_FILE, DOWNLOAD_DIR, EXPORT_DIR, ITERATIONS
-from utils import Base, ReaderJSON
+from src.config import CACHE_FILE, DOWNLOAD_DIR, EXPORT_DIR, ITERATIONS
+from src.utils import Base, ReaderJSON
 
 type NormalizedData = list[dict[str, str | int]]
 

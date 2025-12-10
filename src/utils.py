@@ -1,7 +1,7 @@
 import json, logging, logging.config
 from pathlib import Path
 
-from config import LOGGING_CONFIG
+from src.config import LOGGING_CONFIG
 
 
 class Base:

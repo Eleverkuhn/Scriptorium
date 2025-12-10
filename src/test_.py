@@ -3,9 +3,8 @@ from pathlib import Path
 
 import pytest
 
-# from config import BASE_DIR, TEST_DATA, CACHE_FILE, ITERATIONS, DOWNLOAD_DIR
-import config
-from app import (
+from src import config
+from src.app import (
     Scraper,
     LinkConstructor,
     Cache,
@@ -14,7 +13,7 @@ from app import (
     Normalizer,
     Exporter
 )
-from utils import ReaderJSON, LoggingConfig
+from src.utils import ReaderJSON, LoggingConfig
 
 
 @pytest.fixture
@@ -109,7 +108,6 @@ def company_data_files() -> list[Path]:
     return downloaded_files
 
 
-@pytest.mark.skip(reason="Execution time")
 @pytest.mark.usefixtures("scraper_result")
 class TestScraper:
     def test_cache_is_set(self) -> None:

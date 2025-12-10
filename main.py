@@ -1,4 +1,4 @@
-from app import Scriptorium
+from src.app import Scriptorium
 
 
 if __name__ == "__main__":
